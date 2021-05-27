@@ -8,7 +8,7 @@ from label_parser import LabelParser
 
 class NuScenesEval:
     def __init__(self, pred_label_path, gt_label_path, label_format, save_loc,
-                 distance_threshold=1.0, classes=['car', 'pedestrian'], score_threshold=0.0):
+                 distance_threshold=1.0, classes=['car', 'pedestrian', 'cyclist'], score_threshold=0.0):
 
         # Initialize
         self.save_loc = save_loc

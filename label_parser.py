@@ -5,7 +5,7 @@ class LabelParser:
     def __init__(self, label_format):
         self.format_dict = self.get_attribute_idx(label_format)
 
-    def parse_label(self, label_path, idx_key=None, prediction=False, csv=False):
+    def parse_label(self, label_path, idx_key=None, prediction=False, csv=True):
         """
         :param prediction: if prediction also fetch score (required)
         :return:
