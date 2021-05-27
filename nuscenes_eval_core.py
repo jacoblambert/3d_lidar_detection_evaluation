@@ -7,10 +7,11 @@ import matplotlib.pyplot as plt
 from label_parser import LabelParser
 
 class NuScenesEval:
-    def __init__(self, pred_label_path, gt_label_path, label_format,
-                 distance_threshold=2.0, classes=['Car', 'Pedestrian', 'Cyclist'], score_threshold=0.0):
+    def __init__(self, pred_label_path, gt_label_path, label_format, save_loc,
+                 distance_threshold=1.0, classes=['car', 'pedestrian'], score_threshold=0.0):
 
         # Initialize
+        self.save_loc = save_loc
         self.distance_threshold_sq = distance_threshold**2
         self.score_threshold = score_threshold
         self.classes = classes
@@ -56,7 +57,7 @@ class NuScenesEval:
         print("Evaluation examples")
         file_parsing = LabelParser(label_format)
         for i, pred_fn in enumerate(pred_file_list):
-            print("\r", i+1, "/", num_examples, end="")
+            # print("\r", i+1, "/", num_examples, end="")
             gt_fn = gt_path + os.path.basename(pred_fn)
             predictions = file_parsing.parse_label(pred_fn, prediction=True)
             ground_truth = file_parsing.parse_label(gt_fn, prediction=False)
@@ -102,14 +103,16 @@ class NuScenesEval:
 
     def compute_ap_curve(self, class_dict):
         t_pos = 0
-        class_dict['precision'] = np.ones(class_dict['result'].shape[0]+1)
-        class_dict['recall'] = np.zeros(class_dict['result'].shape[0]+1)
+        class_dict['precision'] = np.ones(class_dict['result'].shape[0]+2)
+        class_dict['recall'] = np.zeros(class_dict['result'].shape[0]+2)
         sorted_detections = class_dict['result'][(-class_dict['result'][:, 1]).argsort(), :]
         for i, (result_bool, result_score) in enumerate(sorted_detections):
             if result_bool == 1:
                 t_pos += 1
             class_dict['precision'][i+1] = t_pos / (i + 1)
             class_dict['recall'][i+1] = t_pos / class_dict['total_N_pos']
+        class_dict['precision'][i+2] = 0
+        class_dict['recall'][i+2] = class_dict['recall'][i+1]
 
         ## Plot
         plt.figure()
@@ -119,13 +122,13 @@ class NuScenesEval:
         plt.title('Precision Recall curve for {} Class'.format(class_dict['class']))
         plt.xlim([0, 1])
         plt.ylim([0, 1.05])
-        # plt.show()
+        plt.savefig(self.save_loc + class_dict['class'] + "_pr_curve.png")
 
     def compute_f1_score(self, precision, recall):
         f1_scores = 2 * precision * recall / (precision + recall)
         return np.max(f1_scores)
 
-    def compute_mean_ap(self, precision, recall, precision_threshold=0.1, recall_threshold=0.1):
+    def compute_mean_ap(self, precision, recall, precision_threshold=0.0, recall_threshold=0.0):
         mean_ap = 0
         threshold_mask = np.logical_and(precision > precision_threshold,
                                         recall > recall_threshold)
@@ -172,16 +175,17 @@ class NuScenesEval:
         assert gt_label.shape[1] == 8
 
         ## Threshold score
-        pred_label = pred_label[pred_label[:, 8].astype(np.float) > self.score_threshold, :]
+        if pred_label.shape[0] > 0:
+            pred_label = pred_label[pred_label[:, 8].astype(np.float) > self.score_threshold, :]
 
         for single_class in self.classes:
             # get all pred labels, order by score
-            class_pred_label = pred_label[pred_label[:, 0] == single_class, 1:]
+            class_pred_label = pred_label[np.char.lower(pred_label[:, 0].astype(str)) == single_class, 1:]
             score = class_pred_label[:, 7].astype(np.float)
             class_pred_label = class_pred_label[(-score).argsort(), :].astype(np.float) # sort decreasing
 
             # add gt label length to total_N_pos
-            class_gt_label = gt_label[gt_label[:, 0] == single_class, 1:].astype(np.float)
+            class_gt_label = gt_label[np.char.lower(gt_label[:, 0].astype(str)) == single_class, 1:].astype(np.float)
             self.results_dict[single_class]['total_N_pos'] += class_gt_label.shape[0]
 
             # match pairs

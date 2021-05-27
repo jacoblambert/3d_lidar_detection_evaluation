@@ -8,6 +8,7 @@ def parse_args():
                         help='Prediction labels data path')
     parser.add_argument('--gt_labels', type=str, required=True,
                         help='Ground Truth labels data path')
+    parser.add_argument('--save_loc', type=str, help='Save location')
     parser.add_argument('--format', type=str, default='class x y z l w h r score')
     args = parser.parse_args()
     return args
@@ -15,7 +16,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    NuScenesEval(args.pred_labels, args.gt_labels, args.format)
+    NuScenesEval(args.pred_labels, args.gt_labels, args.format, args.save_loc)
 
 
 if __name__ == '__main__':

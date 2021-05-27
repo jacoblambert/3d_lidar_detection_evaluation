@@ -2,18 +2,17 @@ import numpy as np
 
 
 class LabelParser:
-    def __init__(self, label_format, csv=False):
+    def __init__(self, label_format):
         self.format_dict = self.get_attribute_idx(label_format)
-        self.csv = csv
 
-    def parse_label(self, label_path, idx_key=None, prediction=False):
+    def parse_label(self, label_path, idx_key=None, prediction=False, csv=False):
         """
         :param prediction: if prediction also fetch score (required)
         :return:
         """
         if idx_key is None:
             idx_key = self.format_dict
-        return self.new_label_from_txt(label_path, idx_key, prediction, self.csv)
+        return self.new_label_from_txt(label_path, idx_key, prediction, csv)
 
     @staticmethod
     def new_label_from_txt(label_path, idx_key, pred, csv):
@@ -67,6 +66,7 @@ class LabelParser:
                 if pred:
                     if 'score' in idx_key:
                         score.append(label[idx_key['score']])
+
         final_array = np.hstack((
             np.array(classes).reshape(-1, 1),
             np.array(x).reshape(-1, 1),
