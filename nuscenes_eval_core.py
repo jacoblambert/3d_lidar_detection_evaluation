@@ -8,12 +8,13 @@ from label_parser import LabelParser
 
 class NuScenesEval:
     def __init__(self, pred_label_path, gt_label_path, label_format, save_loc,
-                 distance_threshold=1.0, classes=['car', 'pedestrian', 'cyclist'], score_threshold=0.0):
+                 distance_threshold=1.0, classes=['car', 'pedestrian', 'cyclist'], score_threshold=0.0, max_range=0):
 
         # Initialize
         self.save_loc = save_loc
         self.distance_threshold_sq = distance_threshold**2
         self.score_threshold = score_threshold
+        self.max_range = max_range
         self.classes = classes
         self.total_N_pos = 0
         self.results_dict = {}
@@ -61,6 +62,9 @@ class NuScenesEval:
             gt_fn = gt_path + os.path.basename(pred_fn)
             predictions = file_parsing.parse_label(pred_fn, prediction=True)
             ground_truth = file_parsing.parse_label(gt_fn, prediction=False)
+        # Filter range
+            if self.max_range > 0:
+                predictions, ground_truth = self.filter_by_range(predictions, ground_truth, range=self.max_range)
             self.eval_pair(predictions, ground_truth)
         print("\nDone!")
         print("----------------------------------")
@@ -125,7 +129,8 @@ class NuScenesEval:
         plt.savefig(self.save_loc + class_dict['class'] + "_pr_curve.png")
 
     def compute_f1_score(self, precision, recall):
-        f1_scores = 2 * precision * recall / (precision + recall)
+        p, r = precision[(precision+recall) > 0], recall[(precision+recall) > 0]
+        f1_scores = 2 * p * r / (p + r)
         return np.max(f1_scores)
 
     def compute_mean_ap(self, precision, recall, precision_threshold=0.0, recall_threshold=0.0):
@@ -230,3 +235,9 @@ class NuScenesEval:
             false_positives[:, 1] = pred_label[:, 7]
             result_score = np.vstack((result_score, false_positives))
         return true_preds, corresponding_gt, result_score
+
+    def filter_by_range(self, pred_label, gt_label, range=0):
+        pred_dist = np.linalg.norm(pred_label[:, 1:4].astype(np.float32), axis=1) < range
+        gt_dist = np.linalg.norm(gt_label[:, 1:4].astype(np.float32), axis=1) < range
+        return pred_label[pred_dist, :], gt_label[gt_dist, :]
+
