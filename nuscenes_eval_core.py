@@ -164,9 +164,9 @@ class NuScenesEval:
 
     def compute_ase(self, predictions, ground_truth):
         # simplified iou where boxes are centered and aligned with eachother
-        pred_vol = predictions[:, 3]*predictions[:, 4]*predictions[:, 5]
-        gt_vol = ground_truth[:, 3]*ground_truth[:, 4]*ground_truth[:, 5]
-        iou3d = np.mean(1 - np.minimum(pred_vol, gt_vol)/np.maximum(pred_vol, gt_vol))
+        pred_vol = predictions[:, 3:6]
+        gt_vol = ground_truth[:, 3:6]
+        iou3d = np.mean(1 - np.prod(np.minimum(pred_vol, gt_vol), axis=1)/np.prod(np.maximum(pred_vol, gt_vol), axis=1))
         return iou3d
 
     def compute_aoe(self, predictions, ground_truth):
