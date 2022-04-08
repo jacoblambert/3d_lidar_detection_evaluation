@@ -8,12 +8,15 @@ from label_parser import LabelParser
 
 class NuScenesEval:
     def __init__(self, pred_label_path, gt_label_path, label_format, save_loc,
-                 distance_threshold=1.0, classes=['car', 'pedestrian', 'cyclist'], score_threshold=0.0, max_range=0):
+                 classes=['car', 'pedestrian', 'cyclist'],
+                 distance_threshold=1.0,
+                 min_score=0.0,
+                 max_range=0.0):
 
         # Initialize
         self.save_loc = save_loc
         self.distance_threshold_sq = distance_threshold**2
-        self.score_threshold = score_threshold
+        self.score_threshold = min_score
         self.max_range = max_range
         self.classes = classes
         self.total_N_pos = 0
@@ -110,6 +113,7 @@ class NuScenesEval:
         class_dict['precision'] = np.ones(class_dict['result'].shape[0]+2)
         class_dict['recall'] = np.zeros(class_dict['result'].shape[0]+2)
         sorted_detections = class_dict['result'][(-class_dict['result'][:, 1]).argsort(), :]
+        print(sorted_detections.shape)
         for i, (result_bool, result_score) in enumerate(sorted_detections):
             if result_bool == 1:
                 t_pos += 1
