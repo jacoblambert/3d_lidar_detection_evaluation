@@ -1,5 +1,7 @@
 ## 3D LiDAR BBox Detection Evaluation
-This code allows you to evaluate your `3D bounding box predictions with ground truth labels using (approximately) the NuScenes standards of evaluation. This won't do NMS or score thresholding for you, just evaluate what you input.
+This code allows you to evaluate your `3D bounding box predictions with ground truth labels using **(approximately)** the NuScenes standards of evaluation. This won't do NMS or score thresholding for you, just evaluate what you input.
+
+**DISCLAMER**: This isn't an exact replication of the NuScenes benchmarking code. Their code is really difficult to use & understand so maybe they do something different I didn't notice, I just implemented it to the best of my understanding of the documentation & code. My mAP calculation is slightly simpler & I also don't calculate mAVE, mAAE and NDS. Feel free to use it to compare between the models you have internally, but I am not encouraging you to compare the results of my code with the official NuScenes benchmarks. This code is (hopefully) readable so please review it fully before using it for something more serious than internal comparison of models.
 
 Requirements:
 * numpy
