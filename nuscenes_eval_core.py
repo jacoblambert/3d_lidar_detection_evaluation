@@ -68,7 +68,7 @@ class NuScenesEval:
         # Filter range
             if self.max_range > 0:
                 predictions, ground_truth = self.filter_by_range(predictions, ground_truth, range=self.max_range)
-            self.eval_pair(predictions, ground_truth)
+            self.eval_pair(predictions.astype(np.float), ground_truth.astype(np.float))
         print("\nDone!")
         print("----------------------------------")
         ## Calculate
@@ -130,7 +130,7 @@ class NuScenesEval:
         plt.title('Precision Recall curve for {} Class'.format(class_dict['class']))
         plt.xlim([0, 1])
         plt.ylim([0, 1.05])
-        plt.savefig(self.save_loc + class_dict['class'] + "_pr_curve.png")
+        plt.savefig(os.path.join(self.save_loc,class_dict['class'] + "_pr_curve.png"))
 
     def compute_f1_score(self, precision, recall):
         p, r = precision[(precision+recall) > 0], recall[(precision+recall) > 0]
@@ -187,14 +187,14 @@ class NuScenesEval:
         if pred_label.shape[0] > 0:
             pred_label = pred_label[pred_label[:, 8].astype(np.float) > self.score_threshold, :]
 
-        for single_class in self.classes:
+        for class_idx,single_class in enumerate(self.classes):
             # get all pred labels, order by score
-            class_pred_label = pred_label[np.char.lower(pred_label[:, 0].astype(str)) == single_class, 1:]
+            class_pred_label = pred_label[pred_label[:, 0].astype(int) == class_idx, 1:]
             score = class_pred_label[:, 7].astype(np.float)
             class_pred_label = class_pred_label[(-score).argsort(), :].astype(np.float) # sort decreasing
 
             # add gt label length to total_N_pos
-            class_gt_label = gt_label[np.char.lower(gt_label[:, 0].astype(str)) == single_class, 1:].astype(np.float)
+            class_gt_label = gt_label[gt_label[:, 0].astype(int) == class_idx, 1:].astype(np.float)
             self.results_dict[single_class]['total_N_pos'] += class_gt_label.shape[0]
 
             # match pairs
