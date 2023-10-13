@@ -5,6 +5,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from label_parser import LabelParser
+import pandas as pd
 def iou_3d_witout_RT(box1, box2):
     '''
         box [x1,y1,z1,x2,y2,z2]   分别是两对角定点的坐标
@@ -91,42 +92,51 @@ class NuScenesEval:
             self.eval_pair(predictions.astype(np.float), ground_truth.astype(np.float))
         print("\nDone!")
         print("----------------------------------")
+
         ## Calculate
+        results = []
         for single_class in self.classes:
+            res = [0]*11
             class_dict = self.results_dict[single_class]
-            print("Calculating metrics for {} class".format(single_class))
-            print("----------------------------------")
-            print("Number of ground truth labels: ", class_dict['total_N_pos'])
-            print("Number of detections:  ", class_dict['result'].shape[0])
-            print("Number of true positives:  ", np.sum(class_dict['result'][:, 0] == 1))
-            print("Number of false positives:  ", np.sum(class_dict['result'][:, 0] == 0))
+
+            res[0] = single_class
+            res[1] = class_dict['total_N_pos']#Number of ground truth labels
+            res[2] = class_dict['result'].shape[0]#Number of detections
+            res[3] = np.sum(class_dict['result'][:, 0] == 1)#Number of true positives
+            res[4] = np.sum(class_dict['result'][:, 0] == 0)#Number of false positives
+            
             if class_dict['total_N_pos'] == 0:
                 print("No detections for this class!")
                 print(" ")
                 continue
+            
             ## AP
             self.compute_ap_curve(class_dict)
             mean_ap = self.compute_mean_ap(class_dict['precision'], class_dict['recall'])
-            print('Mean AP: %.3f ' % mean_ap)
+            res[5] = mean_ap
+
             f1 = self.compute_f1_score(class_dict['precision'], class_dict['recall'])
-            print('F1 Score: %.3f ' % f1)
-            print(' ')
+            res[6] = f1
+
             ## Positive Thresholds
             # ATE 2D
             ate2d = self.compute_ate2d(class_dict['T_p'], class_dict['gt'])
-            print('Average 2D Translation Error [m]:  %.4f ' % ate2d)
+            res[7] = ate2d#Average 2D Translation Error [m]
             # ATE 3D
             ate3d = self.compute_ate3d(class_dict['T_p'], class_dict['gt'])
-            print('Average 3D Translation Error [m]:  %.4f ' % ate3d)
+            res[8] = ate3d#Average 3D Translation Error [m]
             # ASE
             ase = self.compute_ase(class_dict['T_p'], class_dict['gt'])
-            print('Average Scale Error:  %.4f ' % ase)
+            res[9] = ase#Average Scale Error
             # AOE
             aoe = self.compute_aoe(class_dict['T_p'], class_dict['gt'])
-            print('Average Orientation Error [deg]:  %.4f ' % aoe)
-            print(" ")
+            res[10] = aoe#Average Orientation Error [deg]
+            results.append(res)
         self.time = float(time.time() - self.time)
         print("Total evaluation time: %.5f " % self.time)
+        df = pd.DataFrame(results, columns = ['class', 'gt', 'dt', 'tp', 'fp', 'map', 'f1', 'ATE_2D', 'ATE_3D', 'ASE', 'AOE'])
+        print(df)
+        df.to_csv(os.path.join(self.save_loc,'stat.csv'), index = None, header=True) 
 
     def compute_ap_curve(self, class_dict):
         t_pos = 0
@@ -134,22 +144,30 @@ class NuScenesEval:
         class_dict['recall'] = np.zeros(class_dict['result'].shape[0]+2)
         sorted_detections = class_dict['result'][(-class_dict['result'][:, 1]).argsort(), :]
         print(sorted_detections.shape)
+        result_scores = []
         for i, (result_bool, result_score) in enumerate(sorted_detections):
             if result_bool == 1:
                 t_pos += 1
             class_dict['precision'][i+1] = t_pos / (i + 1)
             class_dict['recall'][i+1] = t_pos / class_dict['total_N_pos']
+            if i == 0:
+                result_scores.append(result_score)
+            result_scores.append(result_score)
+        
         class_dict['precision'][i+2] = 0
         class_dict['recall'][i+2] = class_dict['recall'][i+1]
-
+        result_scores.append(result_score)
+        results = np.hstack((np.array(result_scores).reshape(-1, 1),class_dict['recall'].reshape(-1, 1),class_dict['precision'].reshape(-1, 1)))
+        df = pd.DataFrame(results, columns = ['score', 'recall', 'precision'])
+        df.to_csv(os.path.join(self.save_loc,class_dict['class'] + "_pr_curve.csv"), index = None, header=True)
         ## Plot
         plt.figure()
         plt.plot(class_dict['recall'], class_dict['precision'])
         plt.xlabel('Recall')
         plt.ylabel('Precision')
         plt.title('Precision Recall curve for {} Class'.format(class_dict['class']))
-        plt.xlim([0, 1])
-        plt.ylim([0, 1.05])
+        plt.xticks(np.arange(0, 1, 0.1))# plt.xlim([0, 1])
+        plt.yticks(np.arange(0, 1.05, 0.1))# plt.ylim([0, 1.05])
         plt.savefig(os.path.join(self.save_loc,class_dict['class'] + "_pr_curve.png"))
 
     def compute_f1_score(self, precision, recall):
