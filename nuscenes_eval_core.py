@@ -5,7 +5,27 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from label_parser import LabelParser
+def iou_3d_witout_RT(box1, box2):
+    '''
+        box [x1,y1,z1,x2,y2,z2]   分别是两对角定点的坐标
+    '''
+    area1 = abs((box1[3] - box1[0]) * (box1[4] - box1[1]) * (box1[5] - box1[2]))
+    area2 = abs((box2[3] - box2[0]) * (box2[4] - box2[1]) * (box2[5] - box2[2]))
+    area_sum = area1 + area2
 
+    # 计算重叠部分 设重叠box坐标为 [x1,y1,z1,x2,y2,z2]
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    z1 = max(box1[2], box2[2])
+    x2 = min(box1[3], box2[3])
+    y2 = min(box1[4], box2[4])
+    z2 = min(box1[5], box2[5])
+    if x1 >= x2 or y1 >= y2 or z1 >= z2:
+        return 0
+    else:
+        inter_area = abs((x2 - x1) * (y2 - y1) * (z2 - z1))
+
+    return inter_area / (area_sum - inter_area)
 class NuScenesEval:
     def __init__(self, pred_label_path, gt_label_path, label_format, save_loc,
                  classes=['car', 'pedestrian', 'cyclist'],
@@ -103,7 +123,7 @@ class NuScenesEval:
             print('Average Scale Error:  %.4f ' % ase)
             # AOE
             aoe = self.compute_aoe(class_dict['T_p'], class_dict['gt'])
-            print('Average Orientation Error [rad]:  %.4f ' % aoe)
+            print('Average Orientation Error [deg]:  %.4f ' % aoe)
             print(" ")
         self.time = float(time.time() - self.time)
         print("Total evaluation time: %.5f " % self.time)
@@ -167,15 +187,37 @@ class NuScenesEval:
         return mean_ate3d
 
     def compute_ase(self, predictions, ground_truth):
-        # simplified iou where boxes are centered and aligned with eachother
-        pred_vol = predictions[:, 3]*predictions[:, 4]*predictions[:, 5]
-        gt_vol = ground_truth[:, 3]*ground_truth[:, 4]*ground_truth[:, 5]
-        iou3d = np.mean(1 - np.minimum(pred_vol, gt_vol)/np.maximum(pred_vol, gt_vol))
-        return iou3d
+        # # simplified iou where boxes are centered and aligned with eachother
+        # pred_vol = predictions[:, 3]*predictions[:, 4]*predictions[:, 5]
+        # gt_vol = ground_truth[:, 3]*ground_truth[:, 4]*ground_truth[:, 5]
+        # iou3d = np.mean(1 - np.minimum(pred_vol, gt_vol)/np.maximum(pred_vol, gt_vol))
 
+        # return iou3d
+        se_list = []
+        for ii in range(len(predictions)):
+            obj_size = ground_truth[ii][3:6]
+            obp_size = predictions[ii][3:6]
+            obj_box = [0 - obj_size[0] / 2,
+                        0 - obj_size[1] / 2,
+                        0 - obj_size[2] / 2,
+                        0 + obj_size[0] / 2,
+                        0 + obj_size[1] / 2,
+                        0 + obj_size[2] / 2,
+                        ]
+            obp_box = [0 - obp_size[0]/ 2,
+                        0 - obp_size[1] / 2,
+                        0 - obp_size[2] / 2,
+                        0 + obp_size[0]/ 2,
+                        0 + obp_size[1] / 2,
+                        0 + obp_size[2] / 2
+                        ]
+            iou = iou_3d_witout_RT(obj_box, obp_box)
+            se_list.append(1-iou)
+        return sum(se_list)/len(se_list)
     def compute_aoe(self, predictions, ground_truth):
         err = ground_truth[:,6] - predictions[:,6]
         aoe = np.mean(np.abs((err + np.pi) % (2*np.pi) - np.pi))
+        aoe = aoe * 180 / np.pi
         return aoe
 
     def eval_pair(self, pred_label, gt_label):
