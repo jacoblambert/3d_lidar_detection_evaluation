@@ -96,7 +96,7 @@ class NuScenesEval:
         ## Calculate
         results = []
         for single_class in self.classes:
-            res = [0]*11
+            res = [0]*12
             class_dict = self.results_dict[single_class]
 
             res[0] = single_class
@@ -129,12 +129,15 @@ class NuScenesEval:
             ase = self.compute_ase(class_dict['T_p'], class_dict['gt'])
             res[9] = ase#Average Scale Error
             # AOE
-            aoe = self.compute_aoe(class_dict['T_p'], class_dict['gt'])
-            res[10] = aoe#Average Orientation Error [deg]
+            # Barrier orientation is only determined up to 180 degree. (For cones orientation is discarded later)
+            period = np.pi if single_class == 'barrier' else 2 * np.pi
+            aoe = self.compute_aoe(class_dict['T_p'], class_dict['gt'], period)
+            res[10] = aoe#Average Orientation Error [rad]
+            res[11] = aoe*180/np.pi#Average Orientation Error [deg]
             results.append(res)
         self.time = float(time.time() - self.time)
         print("Total evaluation time: %.5f " % self.time)
-        df = pd.DataFrame(results, columns = ['class', 'gt', 'dt', 'tp', 'fp', 'map', 'f1', 'ATE_2D', 'ATE_3D', 'ASE', 'AOE'])
+        df = pd.DataFrame(results, columns = ['class', 'gt', 'dt', 'tp', 'fp', 'map', 'f1', 'ATE', 'ATE_3D', 'ASE', 'AOE_rad', 'AOE_deg'])
         print(df)
         df.to_csv(os.path.join(self.save_loc,'stat.csv'), index = None, header=True) 
 
@@ -232,11 +235,28 @@ class NuScenesEval:
             iou = iou_3d_witout_RT(obj_box, obp_box)
             se_list.append(1-iou)
         return sum(se_list)/len(se_list)
-    def compute_aoe(self, predictions, ground_truth):
-        err = ground_truth[:,6] - predictions[:,6]
-        aoe = np.mean(np.abs((err + np.pi) % (2*np.pi) - np.pi))
-        aoe = aoe * 180 / np.pi
-        return aoe
+    
+    def angle_diff(self, x: float, y: float, period: float) -> float:
+        """
+        Get the smallest angle difference between 2 angles: the angle from y to x.
+        :param x: To angle.
+        :param y: From angle.
+        :param period: Periodicity in radians for assessing angle difference.
+        :return: <float>. Signed smallest between-angle difference in range (-pi, pi).
+        """
+
+        # calculate angle difference, modulo to [0, 2*pi]
+        diff = (x - y + period / 2) % period - period / 2
+        if diff > np.pi:
+            diff = diff - (2 * np.pi)  # shift (pi, 2*pi] to (-pi, 0]
+
+        return diff
+    def compute_aoe(self, predictions, ground_truth, period = 2*np.pi):
+        aoe = []
+        for ii in range(predictions.shape[0]):
+            diff = self.angle_diff(ground_truth[ii,6],predictions[ii,6], period)
+            aoe.append(abs(diff))
+        return np.mean(aoe)
 
     def eval_pair(self, pred_label, gt_label):
         ## Check
