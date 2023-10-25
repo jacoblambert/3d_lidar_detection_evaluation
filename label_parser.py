@@ -69,16 +69,16 @@ class LabelParser:
 
         final_array = np.hstack((
             np.array(classes).reshape(-1, 1),
-            np.array(x).reshape(-1, 1),
-            np.array(y).reshape(-1, 1),
-            np.array(z).reshape(-1, 1),
-            np.array(l).reshape(-1, 1),
-            np.array(w).reshape(-1, 1),
-            np.array(h).reshape(-1, 1),
-            np.array(r).reshape(-1, 1)
+            np.array(x).reshape(-1, 1).astype(float),
+            np.array(y).reshape(-1, 1).astype(float),
+            np.array(z).reshape(-1, 1).astype(float),
+            np.array(l).reshape(-1, 1).astype(float),
+            np.array(w).reshape(-1, 1).astype(float),
+            np.array(h).reshape(-1, 1).astype(float),
+            np.array(r).reshape(-1, 1).astype(float)
         ))
         if pred:
-            final_array = np.hstack((final_array, np.array(score).reshape(-1, 1)))
+            final_array = np.hstack((final_array, np.array(score).reshape(-1, 1).astype(float)))
         return final_array
 
     def get_attribute_idx(self, conversion, verbose=False):

@@ -5,7 +5,31 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from label_parser import LabelParser
+import pandas as pd
+def scale_iou(gt_size, dt_size) -> float:
+    """
+    This method compares predictions to the ground truth in terms of scale.
+    It is equivalent to intersection over union (IOU) between the two boxes in 3D,
+    if we assume that the boxes are aligned, i.e. translation and rotation are considered identical.
+    :param gt_size: np.array[l w h] or [l w h]
+    :param dt_size: np.array[l w h] or [l w h]
+    :return: Scale IOU.
+    """
+    # Validate inputs.
+    sa_size = np.array(gt_size)
+    sr_size = np.array(dt_size)
+    assert all(sa_size > 0), 'Error: sample_annotation sizes must be >0.'
+    assert all(sr_size > 0), 'Error: sample_result sizes must be >0.'
 
+    # Compute IOU.
+    min_wlh = np.minimum(sa_size, sr_size)
+    volume_annotation = np.prod(sa_size)
+    volume_result = np.prod(sr_size)
+    intersection = np.prod(min_wlh)  # type: float
+    union = volume_annotation + volume_result - intersection  # type: float
+    iou = intersection / union
+
+    return iou
 class NuScenesEval:
     def __init__(self, pred_label_path, gt_label_path, label_format, save_loc,
                  classes=['car', 'pedestrian', 'cyclist'],
@@ -71,42 +95,54 @@ class NuScenesEval:
             self.eval_pair(predictions, ground_truth)
         print("\nDone!")
         print("----------------------------------")
+
         ## Calculate
+        results = []
         for single_class in self.classes:
+            res = [0]*12
             class_dict = self.results_dict[single_class]
-            print("Calculating metrics for {} class".format(single_class))
-            print("----------------------------------")
-            print("Number of ground truth labels: ", class_dict['total_N_pos'])
-            print("Number of detections:  ", class_dict['result'].shape[0])
-            print("Number of true positives:  ", np.sum(class_dict['result'][:, 0] == 1))
-            print("Number of false positives:  ", np.sum(class_dict['result'][:, 0] == 0))
+
+            res[0] = single_class
+            res[1] = class_dict['total_N_pos']#Number of ground truth labels
+            res[2] = class_dict['result'].shape[0]#Number of detections
+            res[3] = np.sum(class_dict['result'][:, 0] == 1)#Number of true positives
+            res[4] = np.sum(class_dict['result'][:, 0] == 0)#Number of false positives
+            
             if class_dict['total_N_pos'] == 0:
                 print("No detections for this class!")
                 print(" ")
                 continue
+            
             ## AP
             self.compute_ap_curve(class_dict)
             mean_ap = self.compute_mean_ap(class_dict['precision'], class_dict['recall'])
-            print('Mean AP: %.3f ' % mean_ap)
+            res[5] = mean_ap
+
             f1 = self.compute_f1_score(class_dict['precision'], class_dict['recall'])
-            print('F1 Score: %.3f ' % f1)
-            print(' ')
+            res[6] = f1
+
             ## Positive Thresholds
             # ATE 2D
             ate2d = self.compute_ate2d(class_dict['T_p'], class_dict['gt'])
-            print('Average 2D Translation Error [m]:  %.4f ' % ate2d)
+            res[7] = ate2d#Average 2D Translation Error [m]
             # ATE 3D
             ate3d = self.compute_ate3d(class_dict['T_p'], class_dict['gt'])
-            print('Average 3D Translation Error [m]:  %.4f ' % ate3d)
+            res[8] = ate3d#Average 3D Translation Error [m]
             # ASE
             ase = self.compute_ase(class_dict['T_p'], class_dict['gt'])
-            print('Average Scale Error:  %.4f ' % ase)
+            res[9] = ase#Average Scale Error
             # AOE
-            aoe = self.compute_aoe(class_dict['T_p'], class_dict['gt'])
-            print('Average Orientation Error [rad]:  %.4f ' % aoe)
-            print(" ")
+            # Barrier orientation is only determined up to 180 degree. (For cones orientation is discarded later)
+            period = np.pi if single_class == 'barrier' else 2 * np.pi
+            aoe = self.compute_aoe(class_dict['T_p'], class_dict['gt'], period)
+            res[10] = aoe#Average Orientation Error [rad]
+            res[11] = aoe*180/np.pi#Average Orientation Error [deg]
+            results.append(res)
         self.time = float(time.time() - self.time)
         print("Total evaluation time: %.5f " % self.time)
+        df = pd.DataFrame(results, columns = ['class', 'gt', 'dt', 'tp', 'fp', 'map', 'f1', 'ATE', 'ATE_3D', 'ASE', 'AOE_rad', 'AOE_deg'])
+        print(df)
+        df.to_csv(os.path.join(self.save_loc,'stat.csv'), index = None, header=True) 
 
     def compute_ap_curve(self, class_dict):
         t_pos = 0
@@ -114,23 +150,31 @@ class NuScenesEval:
         class_dict['recall'] = np.zeros(class_dict['result'].shape[0]+2)
         sorted_detections = class_dict['result'][(-class_dict['result'][:, 1]).argsort(), :]
         print(sorted_detections.shape)
+        result_scores = []
         for i, (result_bool, result_score) in enumerate(sorted_detections):
             if result_bool == 1:
                 t_pos += 1
             class_dict['precision'][i+1] = t_pos / (i + 1)
             class_dict['recall'][i+1] = t_pos / class_dict['total_N_pos']
+            if i == 0:
+                result_scores.append(result_score)
+            result_scores.append(result_score)
+        
         class_dict['precision'][i+2] = 0
         class_dict['recall'][i+2] = class_dict['recall'][i+1]
-
+        result_scores.append(result_score)
+        results = np.hstack((np.array(result_scores).reshape(-1, 1),class_dict['recall'].reshape(-1, 1),class_dict['precision'].reshape(-1, 1)))
+        df = pd.DataFrame(results, columns = ['score', 'recall', 'precision'])
+        df.to_csv(os.path.join(self.save_loc,class_dict['class'] + "_pr_curve.csv"), index = None, header=True)
         ## Plot
         plt.figure()
         plt.plot(class_dict['recall'], class_dict['precision'])
         plt.xlabel('Recall')
         plt.ylabel('Precision')
         plt.title('Precision Recall curve for {} Class'.format(class_dict['class']))
-        plt.xlim([0, 1])
-        plt.ylim([0, 1.05])
-        plt.savefig(self.save_loc + class_dict['class'] + "_pr_curve.png")
+        plt.xticks(np.arange(0, 1, 0.1))# plt.xlim([0, 1])
+        plt.yticks(np.arange(0, 1.05, 0.1))# plt.ylim([0, 1.05])
+        plt.savefig(os.path.join(self.save_loc,class_dict['class'] + "_pr_curve.png"))
 
     def compute_f1_score(self, precision, recall):
         p, r = precision[(precision+recall) > 0], recall[(precision+recall) > 0]
@@ -167,16 +211,41 @@ class NuScenesEval:
         return mean_ate3d
 
     def compute_ase(self, predictions, ground_truth):
-        # simplified iou where boxes are centered and aligned with eachother
-        pred_vol = predictions[:, 3:6]
-        gt_vol = ground_truth[:, 3:6]
-        iou3d = np.mean(1 - np.prod(np.minimum(pred_vol, gt_vol), axis=1)/np.prod(np.maximum(pred_vol, gt_vol), axis=1))
-        return iou3d
 
-    def compute_aoe(self, predictions, ground_truth):
-        err = ground_truth[:,6] - predictions[:,6]
-        aoe = np.mean(np.abs((err + np.pi) % (2*np.pi) - np.pi))
-        return aoe
+        # # simplified iou where boxes are centered and aligned with eachother
+        # pred_vol = predictions[:, 3]*predictions[:, 4]*predictions[:, 5]
+        # gt_vol = ground_truth[:, 3]*ground_truth[:, 4]*ground_truth[:, 5]
+        # iou3d = np.mean(1 - np.minimum(pred_vol, gt_vol)/np.maximum(pred_vol, gt_vol))
+
+        # return iou3d
+        se_list = []
+        for ii in range(len(predictions)):
+            obj_size = ground_truth[ii][3:6]
+            obp_size = predictions[ii][3:6]
+            se_list.append(1-scale_iou(obj_size, obp_size))
+        return sum(se_list)/len(se_list)
+    
+    def angle_diff(self, x: float, y: float, period: float) -> float:
+        """
+        Get the smallest angle difference between 2 angles: the angle from y to x.
+        :param x: To angle.
+        :param y: From angle.
+        :param period: Periodicity in radians for assessing angle difference.
+        :return: <float>. Signed smallest between-angle difference in range (-pi, pi).
+        """
+
+        # calculate angle difference, modulo to [0, 2*pi]
+        diff = (x - y + period / 2) % period - period / 2
+        if diff > np.pi:
+            diff = diff - (2 * np.pi)  # shift (pi, 2*pi] to (-pi, 0]
+
+        return diff
+    def compute_aoe(self, predictions, ground_truth, period = 2*np.pi):
+        aoe = []
+        for ii in range(predictions.shape[0]):
+            diff = self.angle_diff(ground_truth[ii,6],predictions[ii,6], period)
+            aoe.append(abs(diff))
+        return np.mean(aoe)
 
     def eval_pair(self, pred_label, gt_label):
         ## Check
