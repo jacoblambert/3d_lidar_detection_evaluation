@@ -6,27 +6,30 @@ import numpy as np
 import matplotlib.pyplot as plt
 from label_parser import LabelParser
 import pandas as pd
-def iou_3d_witout_RT(box1, box2):
-    '''
-        box [x1,y1,z1,x2,y2,z2]   分别是两对角定点的坐标
-    '''
-    area1 = abs((box1[3] - box1[0]) * (box1[4] - box1[1]) * (box1[5] - box1[2]))
-    area2 = abs((box2[3] - box2[0]) * (box2[4] - box2[1]) * (box2[5] - box2[2]))
-    area_sum = area1 + area2
+def scale_iou(gt_size, dt_size) -> float:
+    """
+    This method compares predictions to the ground truth in terms of scale.
+    It is equivalent to intersection over union (IOU) between the two boxes in 3D,
+    if we assume that the boxes are aligned, i.e. translation and rotation are considered identical.
+    :param gt_size: np.array[l w h] or [l w h]
+    :param dt_size: np.array[l w h] or [l w h]
+    :return: Scale IOU.
+    """
+    # Validate inputs.
+    sa_size = np.array(gt_size)
+    sr_size = np.array(dt_size)
+    assert all(sa_size > 0), 'Error: sample_annotation sizes must be >0.'
+    assert all(sr_size > 0), 'Error: sample_result sizes must be >0.'
 
-    # 计算重叠部分 设重叠box坐标为 [x1,y1,z1,x2,y2,z2]
-    x1 = max(box1[0], box2[0])
-    y1 = max(box1[1], box2[1])
-    z1 = max(box1[2], box2[2])
-    x2 = min(box1[3], box2[3])
-    y2 = min(box1[4], box2[4])
-    z2 = min(box1[5], box2[5])
-    if x1 >= x2 or y1 >= y2 or z1 >= z2:
-        return 0
-    else:
-        inter_area = abs((x2 - x1) * (y2 - y1) * (z2 - z1))
+    # Compute IOU.
+    min_wlh = np.minimum(sa_size, sr_size)
+    volume_annotation = np.prod(sa_size)
+    volume_result = np.prod(sr_size)
+    intersection = np.prod(min_wlh)  # type: float
+    union = volume_annotation + volume_result - intersection  # type: float
+    iou = intersection / union
 
-    return inter_area / (area_sum - inter_area)
+    return iou
 class NuScenesEval:
     def __init__(self, pred_label_path, gt_label_path, label_format, save_loc,
                  classes=['car', 'pedestrian', 'cyclist'],
@@ -218,22 +221,7 @@ class NuScenesEval:
         for ii in range(len(predictions)):
             obj_size = ground_truth[ii][3:6]
             obp_size = predictions[ii][3:6]
-            obj_box = [0 - obj_size[0] / 2,
-                        0 - obj_size[1] / 2,
-                        0 - obj_size[2] / 2,
-                        0 + obj_size[0] / 2,
-                        0 + obj_size[1] / 2,
-                        0 + obj_size[2] / 2,
-                        ]
-            obp_box = [0 - obp_size[0]/ 2,
-                        0 - obp_size[1] / 2,
-                        0 - obp_size[2] / 2,
-                        0 + obp_size[0]/ 2,
-                        0 + obp_size[1] / 2,
-                        0 + obp_size[2] / 2
-                        ]
-            iou = iou_3d_witout_RT(obj_box, obp_box)
-            se_list.append(1-iou)
+            se_list.append(1-scale_iou(obj_size, obp_size))
         return sum(se_list)/len(se_list)
     
     def angle_diff(self, x: float, y: float, period: float) -> float:
